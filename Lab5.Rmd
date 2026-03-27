@@ -516,3 +516,73 @@ Este comportamiento se explica porque Naive Bayes asume independencia entre vari
 predictoras se solapan considerablemente entre las tres clases, especialmente entre Económica e Intermedia, lo que hace que el modelo no pueda trazar fronteras de decisión claras. Comparado con el Árbol de Clasificación del Laboratorio 4 
 que alcanzó un 69.24% de exactitud y un Kappa de 0.538, Naive Bayes rinde notablemente peor como clasificador en este conjunto de datos, confirmando que los árboles de decisión capturan mejor las relaciones no lineales entre las 
 características físicas de las propiedades y su categoría de precio.
+
+
+
+### ACTIVIDAD 5 – Eficiencia del algoritmo de clasificación
+
+```{r actividad5-eficiencia, warning=FALSE, message=FALSE}
+# Métricas generales
+cat("===== Eficiencia del Modelo – Naive Bayes Clasificación =====\n")
+cat(sprintf("Accuracy : %.2f%%\n", cm_nb$overall["Accuracy"]  * 100))
+cat(sprintf("Kappa    : %.4f\n",   cm_nb$overall["Kappa"]))
+cat(sprintf("IC 95%%  : (%.2f%%, %.2f%%)\n",
+            cm_nb$overall["AccuracyLower"] * 100,
+            cm_nb$overall["AccuracyUpper"] * 100))
+
+# Métricas por clase
+metricas_nb <- data.frame(
+  Clase         = c("Economica", "Intermedia", "Cara"),
+  Sensibilidad  = round(cm_nb$byClass[, "Sensitivity"]    * 100, 2),
+  Especificidad = round(cm_nb$byClass[, "Specificity"]    * 100, 2),
+  Precision     = round(cm_nb$byClass[, "Pos Pred Value"] * 100, 2),
+  F1            = round(cm_nb$byClass[, "F1"]             * 100, 2)
+)
+print(metricas_nb)
+
+# Gráfico de métricas por clase
+metricas_long <- tidyr::pivot_longer(metricas_nb,
+                                     cols      = -Clase,
+                                     names_to  = "Metrica",
+                                     values_to = "Valor")
+
+ggplot(metricas_long, aes(x = Clase, y = Valor, fill = Metrica)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = paste0(Valor, "%")),
+            position = position_dodge(width = 0.9),
+            vjust = -0.4, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c(
+    "Sensibilidad"  = "#2196F3",
+    "Especificidad" = "#4CAF50",
+    "Precision"     = "#FF9800",
+    "F1"            = "#9C27B0")) +
+  labs(title = "Métricas de eficiencia por categoría – Naive Bayes",
+       x = "Categoría", y = "Porcentaje (%)", fill = "Métrica") +
+  theme_minimal()
+```
+
+
+Al evaluar el modelo Naive Bayes sobre el conjunto de prueba, se obtuvo una exactitud 
+general de **42.26%** con un intervalo de confianza del 95% entre 41.38% y 43.15%, y 
+un coeficiente Kappa de **0.1184**, lo que indica una concordancia casi nula con la 
+realidad más allá del azar. Esto significa que el modelo apenas supera a adivinar 
+aleatoriamente la categoría de precio de una propiedad.
+
+Al analizar las métricas por clase se revela un comportamiento muy desigual entre las 
+tres categorías. La clase **Económica** presenta la Sensibilidad más alta (98.20%), lo 
+que significa que el modelo identifica correctamente casi todas las propiedades baratas, 
+sin embargo su Especificidad es apenas del 15.98% y su Precisión del 38.59%, indicando 
+que también clasifica erróneamente como Económicas una gran cantidad de propiedades que 
+no lo son. Su F1 de 55.41% refleja este desequilibrio. La clase **Intermedia** es 
+prácticamente ignorada por el modelo, con una Sensibilidad de apenas 0.02% y un F1 de 
+0.05%, lo que significa que el modelo casi nunca predice correctamente una propiedad 
+como Intermedia. La clase **Cara** tiene un desempeño intermedio con Especificidad del 
+95.59% y Precisión del 72.13%, lo que indica que cuando el modelo predice una propiedad 
+como Cara generalmente acierta, pero su Sensibilidad del 25.76% y F1 de 37.96% revelan 
+que deja escapar la mayoría de propiedades realmente caras.
+
+El modelo tiene un sesgo muy marcado hacia la clase Económica, 
+clasificando la mayoría de propiedades en ese segmento independientemente de sus 
+características reales, lo que lo convierte en un clasificador poco confiable para 
+los propósitos de SmartStay Advisors.
+
