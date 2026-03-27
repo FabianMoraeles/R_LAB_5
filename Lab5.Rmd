@@ -1,0 +1,209 @@
+---
+title: "Laboratorio 5"
+author: "Luis Gonzalez Joel Jaquez Fabian Morales"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Including Plots
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+
+#Librerias a utilizar
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(readr)
+library(nortest)
+library(caret)
+library(car)
+library(glmnet)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(e1071)
+```
+
+## Link de GITHUB
+
+<https://github.com/G1LB3T0/R_LAB_5>
+  
+  
+# Cargar datos
+
+```{r}
+load("datos/listings.RData")
+```
+
+### 1. Modelo de regresión usando bayes ingenuo.
+
+# Preprocesamiento
+```{r}
+listings_clean <- listings %>%
+  mutate(
+    price = as.numeric(gsub("[$,]", "", price)),
+    host_response_rate = suppressWarnings(
+      as.numeric(gsub("%", "", host_response_rate)) / 100
+    )
+  ) %>%
+  filter(!is.na(price), price > 0) %>%
+  
+
+  filter(price >= 10, price <= 1000) %>%   
+  
+  select(
+    price, accommodates, bathrooms, bedrooms, beds,
+    number_of_reviews, review_scores_rating,
+    host_response_rate, availability_365,
+    room_type, property_type
+  ) %>%
+  drop_na() %>%
+  mutate(
+    room_type     = as.factor(room_type),
+    property_type = as.factor(property_type)
+  )
+```
+
+# Predicciones
+```{r}
+listings_nb <- listings_clean %>%
+  mutate(
+    accommodates_d = cut(accommodates,
+                         breaks = c(0, 2, 4, 6, Inf),
+                         labels = c("1-2", "3-4", "5-6", "7+")),
+    bathrooms_d    = cut(bathrooms,
+                         breaks = c(0, 1, 2, 3, Inf),
+                         labels = c("1", "2", "3", "4+")),
+    bedrooms_d     = cut(bedrooms,
+                         breaks = c(0, 1, 2, 3, Inf),
+                         labels = c("1", "2", "3", "4+")),
+    beds_d         = cut(beds,
+                         breaks = c(0, 1, 2, 3, Inf),
+                         labels = c("1", "2", "3", "4+")),
+    reviews_d      = cut(number_of_reviews,
+                         breaks = c(-1, 0, 10, 50, Inf),
+                         labels = c("0", "1-10", "11-50", "50+")),
+    rating_d       = cut(review_scores_rating,
+                         breaks = c(0, 60, 80, 90, 100),
+                         labels = c("bajo", "medio", "alto", "excelente")),
+    availability_d = cut(availability_365,
+                         breaks = c(-1, 90, 180, 270, 365),
+                         labels = c("baja", "media", "alta", "muy_alta")),
+    response_d     = cut(host_response_rate,
+                         breaks = c(-0.01, 0.5, 0.8, 0.95, 1),
+                         labels = c("bajo", "medio", "alto", "excelente"))
+  ) %>%
+  mutate(
+    price_bin = cut(price,
+                    breaks = quantile(price, probs = seq(0, 1, by = 0.05)),
+                    include.lowest = TRUE,
+                    labels = FALSE)
+  )
+
+price_breaks  <- quantile(listings_nb$price, probs = seq(0, 1, by = 0.05))
+bin_midpoints <- sapply(1:(length(price_breaks) - 1), function(i) {
+  (price_breaks[i] + price_breaks[i + 1]) / 2
+})
+```
+
+# Modelo
+```{r}
+set.seed(42)
+trainIndex <- createDataPartition(listings_nb$price, p = 0.8, list = FALSE)
+
+features <- c(
+  "accommodates_d", "bathrooms_d", "bedrooms_d", "beds_d",
+  "reviews_d", "rating_d", "availability_d", "response_d",
+  "room_type", "property_type"
+)
+
+train_data <- listings_nb[trainIndex, ]
+test_data  <- listings_nb[-trainIndex, ]
+
+cat("Entrenamiento:", nrow(train_data), "filas\n")
+cat("Prueba:       ", nrow(test_data),  "filas\n")
+
+train_control <- trainControl(method = "none")
+
+nb_model <- train(
+  x         = train_data[, features],
+  y         = as.factor(train_data$price_bin),
+  method    = "naive_bayes",
+  trControl = train_control,
+  tuneGrid  = expand.grid(
+    laplace   = 1,
+    usekernel = FALSE,
+    adjust    = 1
+  )
+)
+
+cat("\nModelo entrenado.\n")
+print(nb_model)
+```
+# Predicción
+```{r}
+pred_bin     <- predict(nb_model, newdata = test_data[, features])
+pred_bin_num <- as.numeric(as.character(pred_bin))
+pred_prices  <- bin_midpoints[pred_bin_num]
+actual_prices <- test_data$price
+```
+
+
+# Visualización
+```{r}
+rmse_val <- sqrt(mean((actual_prices - pred_prices)^2))
+mae_val  <- mean(abs(actual_prices - pred_prices))
+ss_res   <- sum((actual_prices - pred_prices)^2)
+ss_tot   <- sum((actual_prices - mean(actual_prices))^2)
+r2_val   <- 1 - (ss_res / ss_tot)
+
+cat("\n===== MÉTRICAS – Naive Bayes Regresión =====\n")
+cat(sprintf("RMSE : %.4f\n", rmse_val))
+cat(sprintf("MAE  : %.4f\n", mae_val))
+cat(sprintf("R²   : %.4f\n", r2_val))
+
+results_df <- data.frame(
+  actual    = actual_prices,
+  predicted = pred_prices,
+  error     = pred_prices - actual_prices
+)
+
+
+ggplot(results_df, aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.3, color = "#2196F3") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  coord_cartesian(xlim = c(0, 500), ylim = c(0, 500)) +
+  labs(
+    title = "Naive Bayes – Predicho vs Real",
+    x     = "Precio Real (USD)",
+    y     = "Precio Predicho (USD)"
+  ) +
+  theme_minimal()
+
+
+ggplot(results_df, aes(x = error)) +
+  geom_histogram(bins = 40, fill = "#4CAF50", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Distribución del Error – Naive Bayes",
+    x     = "Error (Predicho - Real)",
+    y     = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+El modelo de Naive Bayes muestra una distribución del error centrada cerca de 0, lo que indica que en general las predicciones no están sistemáticamente sesgadas. Sin embargo, se observa una cola derecha pronunciada, lo que sugiere que el modelo subestima precios altos con mayor frecuencia que los sobreestima. Esto es esperado en Naive Bayes, ya que al discretizar el precio en bins y asumir independencia entre variables, pierde capacidad para capturar relaciones complejas en los extremos del rango de precios.
+
+
+
