@@ -434,3 +434,85 @@ precios mediante bins de cuantiles, pierde precisión numérica y asume independ
 directamente con valores continuos. En conclusión, para predecir el precio por noche de las propiedades Airbnb de SmartStay Advisors, la Regresión Lineal Múltiple es el 
 algoritmo más adecuado de los tres evaluados bajo condiciones comparables.
 
+#4 – Modelo de clasificación Naive Bayes
+```{r actividad4-datos, warning=FALSE, message=FALSE}
+# Mismos puntos de corte que Lab 4 (P33 y P67)
+precios_validos_cat <- listings_clean_comp %>%
+  filter(!is.na(price), price > 0, price < 1000) %>%
+  pull(price)
+
+p33 <- quantile(precios_validos_cat, 0.33)
+p67 <- quantile(precios_validos_cat, 0.67)
+
+cat("Punto de corte inferior (P33):", round(p33, 2), "USD/noche\n")
+cat("Punto de corte superior (P67):", round(p67, 2), "USD/noche\n")
+
+listings_cat_nb <- listings_clean_comp %>%
+  filter(!is.na(price), price > 0, price < 1000,
+         !is.na(bedrooms), bedrooms <= 10) %>%
+  select(where(is.numeric)) %>%
+  drop_na()
+
+listings_cat_nb$precio_cat <- cut(
+  listings_cat_nb$price,
+  breaks         = c(0, p33, p67, Inf),
+  labels         = c("Economica", "Intermedia", "Cara"),
+  include.lowest = TRUE,
+  right          = TRUE
+)
+
+cat("\nDistribución de categorías:\n")
+print(table(listings_cat_nb$precio_cat))
+```
+Para construir el modelo de clasificación de Naive Bayes, se utilizó la misma variable categórica `precio_cat` definida en el Laboratorio 4, garantizando así que la comparación posterior entre algoritmos sea válida. 
+Los puntos de corte se calcularon usando los percentiles 33 y 67 del precio por noche sobre las propiedades 
+válidas (precio entre 1 y 1,000), obteniendo P33 = 136 USD/noche y P67 = 250 USD/noche. Con estos límites, las propiedades quedan clasificadas en tres categorías: 
+Económica (hasta 136/noche), Intermedia (entre 136 y 250/noche) y Cara (más de 250/noche).
+
+La distribución resultante muestra un balance adecuado entre las tres clases: 
+20,908 propiedades Económicas (34.7%), 20,766 Intermedias (34.4%) y 18,655 Caras (30.9%), sumando 60,329 propiedades válidas. Esta distribución balanceada es 
+fundamental para que Naive Bayes pueda aprender los patrones de las tres categorías por igual durante el entrenamiento, evitando que el modelo se sesgue hacia la clase más frecuente. 
+El uso de percentiles como criterio de corte, en lugar de valores arbitrarios, es lo que garantiza este balance, ya que divide el mercado en tres segmentos con proporciones similares independientemente de la escala de precios.
+
+
+```{r actividad4-modelo, warning=FALSE, message=FALSE}
+# Mismo split que Lab 4
+set.seed(123)
+idx_nb_clas    <- sample(nrow(listings_cat_nb), size = 0.8 * nrow(listings_cat_nb))
+train_nb_clas  <- listings_cat_nb[ idx_nb_clas, ]
+test_nb_clas   <- listings_cat_nb[-idx_nb_clas, ]
+
+train_resp <- train_nb_clas$precio_cat
+test_resp  <- test_nb_clas$precio_cat
+
+train_nb_clas$price      <- NULL
+train_nb_clas$precio_cat <- NULL
+test_nb_clas$price       <- NULL
+test_nb_clas$precio_cat  <- NULL
+
+cat("Entrenamiento:", nrow(train_nb_clas), "observaciones\n")
+cat("Prueba:       ", nrow(test_nb_clas),  "observaciones\n")
+
+# Entrenar NB clasificador
+nb_clas      <- naiveBayes(x = train_nb_clas, y = train_resp)
+pred_clas_nb <- predict(nb_clas, newdata = test_nb_clas)
+
+# Matriz de confusión 
+cm_nb <- confusionMatrix(pred_clas_nb, test_resp)
+print(cm_nb)
+```
+Se utilizó el mismo split `set.seed(123)` con 80/20 del Laboratorio 4, obteniendo 48,263 observaciones para entrenamiento y 12,066 para prueba. 
+El modelo Naive Bayes clasificador se entrenó usando todas las variables numéricas disponibles del dataset como predictores y `precio_cat` como variable respuesta.
+
+Los resultados de la matriz de confusión revelan un modelo con serias limitaciones. La exactitud general es de apenas 42.26%, con un intervalo de confianza del 95% 
+entre 41.38% y 43.15%, y un coeficiente Kappa de 0.1184, lo que indica una concordancia casi nula más allá del azar. Esto significa que el modelo no logra clasificar las propiedades de forma confiable.
+
+Al analizar el comportamiento por clase, se observa un sesgo severo hacia la categoría Económica ya que el modelo la predice de forma masiva, acumulando 4,143 aciertos pero también clasificando incorrectamente 3,844 propiedades Intermedias 
+y 2,749 Caras como Económicas. Esto explica por qué la Sensibilidad de Económica es altísima (98.20%) pero su Especificidad es bajísima (15.98%), pues el modelo casi siempre predice Económica sin discriminar bien las otras clases. 
+La categoría Intermedia es prácticamente ignorada por el modelo, con una Sensibilidad cercana a cero (0.024%), lo que significa que casi nunca la predice correctamente. La categoría Cara tiene un desempeño intermedio con Sensibilidad del 25.76% 
+y Especificidad del 95.58%, indicando que cuando el modelo predice Cara suele acertar, pero deja escapar la mayoría de propiedades realmente caras.
+
+Este comportamiento se explica porque Naive Bayes asume independencia entre variables y estima probabilidades a partir de distribuciones gaussianas para variables continuas. En este dataset, las distribuciones de las variables 
+predictoras se solapan considerablemente entre las tres clases, especialmente entre Económica e Intermedia, lo que hace que el modelo no pueda trazar fronteras de decisión claras. Comparado con el Árbol de Clasificación del Laboratorio 4 
+que alcanzó un 69.24% de exactitud y un Kappa de 0.538, Naive Bayes rinde notablemente peor como clasificador en este conjunto de datos, confirmando que los árboles de decisión capturan mejor las relaciones no lineales entre las 
+características físicas de las propiedades y su categoría de precio.
