@@ -37,7 +37,7 @@ library(e1071)
 
 ## Link de GITHUB
 
-<https://github.com/G1LB3T0/R_LAB_5>
+<https://github.com/FabianMoraeles/R_LAB_5>
   
   
 # Cargar datos
@@ -586,3 +586,73 @@ clasificando la mayoría de propiedades en ese segmento independientemente de su
 características reales, lo que lo convierte en un clasificador poco confiable para 
 los propósitos de SmartStay Advisors.
 
+
+### ACTIVIDAD 6 – Análisis de la matriz de confusión
+
+```{r actividad6-matriz, warning=FALSE, message=FALSE}
+# Visualización de la matriz de confusión
+as.data.frame(cm_nb$table) %>%
+  ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), fontface = "bold", size = 6) +
+  scale_fill_gradient(low = "#E3F2FD", high = "#1565C0") +
+  labs(title    = "Matriz de Confusión – Naive Bayes Clasificación",
+       subtitle = "Filas = predicción | Columnas = valor real",
+       x = "Categoría real", y = "Categoría predicha") +
+  theme_minimal()
+
+# Tasa de error por clase
+errores_nb <- data.frame(
+  Clase = c("Economica", "Intermedia", "Cara"),
+  Correctos     = c(cm_nb$table[1,1], cm_nb$table[2,2], cm_nb$table[3,3]),
+  Errores_total = c(
+    sum(cm_nb$table[1,]) - cm_nb$table[1,1],
+    sum(cm_nb$table[2,]) - cm_nb$table[2,2],
+    sum(cm_nb$table[3,]) - cm_nb$table[3,3]
+  )
+)
+
+errores_nb$Tasa_error <- round(
+  errores_nb$Errores_total /
+  (errores_nb$Correctos + errores_nb$Errores_total) * 100, 2)
+
+print(errores_nb)
+
+ggplot(errores_nb, aes(x = Clase, y = Tasa_error, fill = Clase)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Tasa_error, "%")),
+            vjust = -0.5, fontface = "bold") +
+  scale_fill_manual(values = c(
+    "Economica"  = "#4CAF50",
+    "Intermedia" = "#F44336",
+    "Cara"       = "#FF9800")) +
+  labs(title = "Tasa de error por categoría – Naive Bayes",
+       x = "Categoría", y = "% de errores") +
+  theme_minimal()
+```
+
+La matriz de confusión visualiza de forma contundente el problema central del modelo: 
+la fila de **Económica** está completamente dominada por valores altos (4,143 + 3,844 
++ 2,749), confirmando que el modelo clasifica la gran mayoría de propiedades como 
+Económicas sin importar su categoría real. La fila de **Intermedia** es casi 
+inexistente, con apenas 1, 1 y 4 predicciones en toda la prueba, lo que significa 
+que el modelo prácticamente nunca predice esta categoría. La fila de **Cara** muestra 
+un comportamiento más razonable con 955 aciertos, aunque arrastra 75 y 294 errores 
+provenientes de propiedades Económicas e Intermedias respectivamente.
+
+La tabla de tasas de error confirma y cuantifica esta disparidad. La categoría donde 
+el modelo se equivoca **menos** es **Cara** con una tasa de error del 27.87%, es 
+decir, clasifica correctamente 955 de 1,324 propiedades caras. Le sigue **Económica** 
+con una tasa de error del 61.41%, donde a pesar de tener 4,143 aciertos, comete 6,593 
+errores clasificando propiedades Intermedias y Caras como Económicas. La categoría 
+donde el modelo se equivoca **más** es **Intermedia** con una tasa de error del 
+83.33%, clasificando correctamente apenas 1 de 6 predicciones.
+
+Desde el punto de vista del negocio de SmartStay Advisors, el error más grave es 
+clasificar 2,749 propiedades **Caras** como **Económicas**, ya que implicaría 
+recomendar al cliente una propiedad con un precio por noche muy superior a su 
+presupuesto, dañando directamente la confianza en el servicio. En contraste, 
+confundir propiedades Intermedias con Económicas es menos crítico porque la 
+diferencia de precio es más tolerable. En conclusión, Naive Bayes resulta un 
+clasificador poco adecuado para este problema, con un sesgo estructural hacia 
+la clase mayoritaria que lo hace poco confiable para los tres segmentos de mercado.
