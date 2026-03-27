@@ -238,3 +238,119 @@ Además, se observa un patrón muy claro. Conforme el precio real aumenta, el er
 
 Naive Bayes es un predictor débil para precios continuos. Es útil como clasificador pero no como regresor numérico preciso.
 
+
+### 3 – Parte 1: Preparación de datos comparables
+```{r actividad3-datos, warning=FALSE, message=FALSE}
+listings_clean_comp <- listings %>%
+  mutate(price = parse_number(price)) %>%
+  select(-c(listing_url, scrape_id, picture_url, host_url, host_thumbnail_url,
+            host_picture_url, description, neighborhood_overview, host_about, amenities))
+
+# Misma semilla y corte que Lab 3 y Lab 4
+set.seed(123)
+total_filas  <- nrow(listings_clean_comp)
+indice_train <- sample(1:total_filas, size = 0.8 * total_filas)
+train_comp   <- listings_clean_comp[ indice_train, ]
+test_comp    <- listings_clean_comp[-indice_train, ]
+
+# Mismas variables y filtros que Labs anteriores
+train_modelo <- train_comp %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10,
+         !is.na(bathrooms), !is.na(accommodates)) %>%
+  select(price, accommodates, bedrooms, bathrooms,
+         number_of_reviews, review_scores_rating) %>%
+  drop_na()
+
+test_modelo <- test_comp %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10,
+         !is.na(bathrooms), !is.na(accommodates)) %>%
+  select(price, accommodates, bedrooms, bathrooms,
+         number_of_reviews, review_scores_rating) %>%
+  drop_na()
+
+cat("Filas entrenamiento:", nrow(train_modelo), "\n")
+cat("Filas prueba:       ", nrow(test_modelo),  "\n")
+```
+
+```{r actividad3-nb, warning=FALSE, message=FALSE}
+# NB requiere variables discretizadas para regresión
+discretizar <- function(df) {
+  df %>%
+    mutate(
+      accommodates_d = cut(accommodates,
+                           breaks = c(0, 2, 4, 6, Inf),
+                           labels = c("1-2", "3-4", "5-6", "7+")),
+      bedrooms_d     = cut(bedrooms,
+                           breaks = c(0, 1, 2, 3, Inf),
+                           labels = c("1", "2", "3", "4+")),
+      bathrooms_d    = cut(bathrooms,
+                           breaks = c(0, 1, 2, 3, Inf),
+                           labels = c("1", "2", "3", "4+")),
+      reviews_d      = cut(number_of_reviews,
+                           breaks = c(-1, 0, 10, 50, Inf),
+                           labels = c("0", "1-10", "11-50", "50+")),
+      rating_d       = cut(review_scores_rating,
+                           breaks = c(0, 60, 80, 90, 100),
+                           labels = c("bajo", "medio", "alto", "excelente"))
+    )
+}
+
+train_nb_comp <- discretizar(train_modelo)
+test_nb_comp  <- discretizar(test_modelo)
+
+# bins de precio para convertir NB en "regresor"
+price_breaks_comp <- quantile(train_nb_comp$price, probs = seq(0, 1, by = 0.05))
+train_nb_comp$price_bin <- cut(train_nb_comp$price,
+                               breaks         = price_breaks_comp,
+                               include.lowest = TRUE,
+                               labels         = FALSE)
+
+bin_midpoints_comp <- sapply(1:(length(price_breaks_comp) - 1), function(i) {
+  (price_breaks_comp[i] + price_breaks_comp[i + 1]) / 2
+})
+
+features_comp <- c("accommodates_d", "bedrooms_d", "bathrooms_d",
+                   "reviews_d", "rating_d")
+
+# Entrenar y predecir
+nb_comp      <- naiveBayes(x = train_nb_comp[, features_comp],
+                            y = as.factor(train_nb_comp$price_bin))
+pred_bin_comp    <- predict(nb_comp, newdata = test_nb_comp[, features_comp])
+pred_bin_num     <- as.numeric(as.character(pred_bin_comp))
+pred_bin_num     <- pmin(pmax(pred_bin_num, 1), length(bin_midpoints_comp))
+pred_precios_nb  <- bin_midpoints_comp[pred_bin_num]
+real_precios     <- test_nb_comp$price
+
+# Métricas
+rmse_nb_comp <- sqrt(mean((real_precios - pred_precios_nb)^2, na.rm = TRUE))
+mae_nb_comp  <- mean(abs(real_precios - pred_precios_nb), na.rm = TRUE)
+r2_nb_comp   <- cor(real_precios, pred_precios_nb, use = "complete.obs")^2
+
+cat("===== Naive Bayes (condiciones comparables) =====\n")
+cat(sprintf("RMSE : $%.2f\n", rmse_nb_comp))
+cat(sprintf("MAE  : $%.2f\n", mae_nb_comp))
+cat(sprintf("R²   :  %.4f\n", r2_nb_comp))
+```
+Para garantizar una comparación válida entre algoritmos, se reutilizaron exactamente 
+el mismo preprocesamiento, semilla (`set.seed(123)`) y división 80/20 empleados en 
+los laboratorios anteriores, obteniendo 48,442 observaciones para entrenamiento y 
+12,173 para prueba con las mismas seis variables: `price`, `accommodates`, `bedrooms`, 
+`bathrooms`, `number_of_reviews` y `review_scores_rating`.
+
+Dado que Naive Bayes es fundamentalmente un algoritmo probabilístico que trabaja con 
+variables categóricas, no puede recibir variables numéricas continuas directamente 
+como regresor. Para adaptarlo a la predicción de precios, se discretizaron todas las 
+variables predictoras en rangos con significado lógico (por ejemplo, capacidad de 1-2, 
+3-4, 5-6 o 7+ personas) y se dividió la variable respuesta `price` en 20 intervalos 
+de igual frecuencia (bins por cuantiles de 5%), utilizando el punto medio de cada 
+intervalo como precio predicho final.
+
+El modelo obtuvo un RMSE de $134.25, un MAE de $132.59 y un R² de 0.3428. Esto 
+significa que, en promedio, el modelo se equivoca en aproximadamente $134 por noche, 
+y que solo logra explicar el 34.28% de la variabilidad del precio. Este rendimiento 
+limitado es una consecuencia directa de la naturaleza del algoritmo, porque al discretizar 
+el precio continuo en bins y asumir independencia entre variables, Naive Bayes pierde 
+la capacidad de capturar relaciones numéricas precisas, lo que lo convierte en un 
+predictor débil para variables de respuesta continua como el precio por noche.
