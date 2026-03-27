@@ -206,4 +206,35 @@ ggplot(results_df, aes(x = error)) +
 El modelo de Naive Bayes muestra una distribución del error centrada cerca de 0, lo que indica que en general las predicciones no están sistemáticamente sesgadas. Sin embargo, se observa una cola derecha pronunciada, lo que sugiere que el modelo subestima precios altos con mayor frecuencia que los sobreestima. Esto es esperado en Naive Bayes, ya que al discretizar el precio en bins y asumir independencia entre variables, pierde capacidad para capturar relaciones complejas en los extremos del rango de precios.
 
 
+### 2. Analice los resultados del modelo de regresión usando bayes ingenuo.
+
+```{r}
+cat("\n===== MÉTRICAS – Naive Bayes Regresión =====\n")
+cat(sprintf("RMSE : %.4f\n", rmse_val))
+cat(sprintf("MAE  : %.4f\n", mae_val))
+cat(sprintf("R²   : %.4f\n", r2_val))
+
+
+within_50  <- mean(abs(results_df$error) <= 50)  * 100
+within_100 <- mean(abs(results_df$error) <= 100) * 100
+
+cat(sprintf("\nPredicciones dentro de ±$50 : %.2f%%\n", within_50))
+cat(sprintf("Predicciones dentro de ±$100: %.2f%%\n", within_100))
+
+
+ggplot(results_df, aes(x = actual, y = error)) +
+  geom_point(alpha = 0.2, color = "#FF5722") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Error de Predicción vs Precio Real – Naive Bayes",
+    x     = "Precio Real (USD)",
+    y     = "Error (Predicho - Real)"
+  ) +
+  theme_minimal()
+```
+El RMSE y MAE reflejan un error considerable en términos absolutos. El R² bajo confirma que Naive Bayes no captura bien la varianza del precio como variable continua, lo cual es una limitación inherente del algoritmo.
+
+Además, se observa un patrón muy claro. Conforme el precio real aumenta, el error se vuelve cada vez más negativo, lo que significa que el modelo subestima sistemáticamente las propiedades caras.
+
+Naive Bayes es un predictor débil para precios continuos. Es útil como clasificador pero no como regresor numérico preciso.
 
