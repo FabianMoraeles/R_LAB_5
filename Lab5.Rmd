@@ -710,3 +710,76 @@ propiedades están fuertemente correlacionadas entre sí (como `bathrooms`, `bed
 y `accommodates`). En conclusión, el modelo no está sobreajustado, sino que carece 
 de la capacidad suficiente para capturar la complejidad de los datos, lo que explica 
 su bajo rendimiento tanto en entrenamiento como en prueba.
+
+#8 – Modelo con validación cruzada
+```{r actividad8-cv, warning=FALSE, message=FALSE}
+# Reconstruir datos con precio_cat como factor para caret
+train_cv <- train_nb_clas
+train_cv$precio_cat <- train_resp
+
+# Control de validación cruzada 10-fold
+ctrl_cv <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+# Entrenar NB con validación cruzada
+nb_cv <- train(
+  precio_cat ~ .,
+  data      = train_cv,
+  method    = "naive_bayes",
+  trControl = ctrl_cv,
+  tuneGrid  = expand.grid(
+    laplace   = 0,
+    usekernel = FALSE,
+    adjust    = 1
+  )
+)
+
+print(nb_cv)
+
+# Predecir sobre conjunto de prueba
+test_cv <- test_nb_clas
+pred_cv <- predict(nb_cv, newdata = test_cv)
+
+cm_cv <- confusionMatrix(pred_cv, test_resp)
+print(cm_cv)
+
+# Comparación directa
+comparacion_cv <- data.frame(
+  Modelo   = c("NB Sin CV", "NB Con CV (10-fold)"),
+  Accuracy = round(c(cm_nb$overall["Accuracy"] * 100,
+                     cm_cv$overall["Accuracy"] * 100), 2),
+  Kappa    = round(c(cm_nb$overall["Kappa"],
+                     cm_cv$overall["Kappa"]), 4)
+)
+
+print(comparacion_cv)
+
+# Gráfico comparativo
+ggplot(comparacion_cv, aes(x = Modelo, y = Accuracy, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.5) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            vjust = -0.5, fontface = "bold", size = 5) +
+  scale_fill_manual(values = c("NB Sin CV"           = "#FF9800",
+                               "NB Con CV (10-fold)" = "#2196F3")) +
+  labs(title    = "Accuracy – NB Sin CV vs NB Con Validación Cruzada",
+       subtitle = "Naive Bayes Clasificación",
+       x = NULL, y = "Accuracy (%)") +
+  ylim(0, 100) +
+  theme_minimal()
+```
+Se entrenó un segundo modelo Naive Bayes utilizando validación cruzada de 10 pliegues (10-fold Cross Validation) sobre el conjunto de entrenamiento de 48,263 observaciones. 
+Este método divide el conjunto de entrenamiento en 10 partes iguales de aproximadamente 43,437 observaciones cada una, entrenando el modelo 10 veces y usando cada vez un 
+pliegue distinto como validación interna, lo que produce una estimación más robusta y confiable del rendimiento real del algoritmo.
+
+Los resultados obtenidos son idénticos a los del modelo anterior: Accuracy de 42.26% y Kappa de 0.1184 en ambos casos. La validación cruzada estimó internamente un 
+Accuracy promedio de 41.91% durante el entrenamiento, lo que es consistente con el 42.26% obtenido sobre el conjunto de prueba y confirma que el modelo generaliza de forma estable.
+
+La razón por la que ambos modelos producen exactamente los mismos resultados es que la validación cruzada es una técnica de evaluación y selección de hiperparámetros, 
+no un mecanismo que modifica el algoritmo en sí. En este caso, los hiperparámetros se mantuvieron fijos (`laplace = 0`, `usekernel = FALSE`, `adjust = 1`), por lo que 
+el modelo final entrenado con CV aprende exactamente los mismos patrones que el modelo sin CV. La ventaja real de la validación cruzada se manifestaría en la actividad 
+siguiente, donde se prueban distintos valores de hiperparámetros y la CV ayuda a seleccionar la mejor combinación de forma objetiva.
+
+En conclusión, ninguno de los dos modelos supera al otro porque ambos tienen el mismo rendimiento, lo que refuerza la conclusión de que la limitación no está en la técnica 
+de evaluación sino en la capacidad de Naive Bayes para separar las tres categorías de precio en este conjunto de datos.
+
+
+
