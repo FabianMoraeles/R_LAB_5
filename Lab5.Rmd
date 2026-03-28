@@ -519,7 +519,7 @@ características físicas de las propiedades y su categoría de precio.
 
 
 
-### ACTIVIDAD 5 – Eficiencia del algoritmo de clasificación
+#5 – Eficiencia del algoritmo de clasificación
 
 ```{r actividad5-eficiencia, warning=FALSE, message=FALSE}
 # Métricas generales
@@ -587,7 +587,7 @@ características reales, lo que lo convierte en un clasificador poco confiable p
 los propósitos de SmartStay Advisors.
 
 
-### ACTIVIDAD 6 – Análisis de la matriz de confusión
+#6 – Análisis de la matriz de confusión
 
 ```{r actividad6-matriz, warning=FALSE, message=FALSE}
 # Visualización de la matriz de confusión
@@ -656,3 +656,57 @@ confundir propiedades Intermedias con Económicas es menos crítico porque la
 diferencia de precio es más tolerable. En conclusión, Naive Bayes resulta un 
 clasificador poco adecuado para este problema, con un sesgo estructural hacia 
 la clase mayoritaria que lo hace poco confiable para los tres segmentos de mercado.
+
+#7 - ¿Está sobreajustado el modelo?
+```{r actividad7-overfit, warning=FALSE, message=FALSE}
+# Predecir sobre el conjunto de ENTRENAMIENTO
+pred_train_nb <- predict(nb_clas, newdata = train_nb_clas)
+
+cm_train_nb <- confusionMatrix(pred_train_nb, train_resp)
+
+# Comparar accuracy train vs test
+acc_train <- round(cm_train_nb$overall["Accuracy"] * 100, 2)
+acc_test  <- round(cm_nb$overall["Accuracy"]       * 100, 2)
+kappa_train <- round(cm_train_nb$overall["Kappa"], 4)
+kappa_test  <- round(cm_nb$overall["Kappa"],       4)
+
+comparacion_ov <- data.frame(
+  Conjunto   = c("Entrenamiento", "Prueba"),
+  Accuracy   = c(acc_train, acc_test),
+  Kappa      = c(kappa_train, kappa_test)
+)
+
+print(comparacion_ov)
+
+# Gráfico comparativo
+ggplot(comparacion_ov, aes(x = Conjunto, y = Accuracy, fill = Conjunto)) +
+  geom_col(show.legend = FALSE, width = 0.5) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            vjust = -0.5, fontface = "bold", size = 5) +
+  scale_fill_manual(values = c("Entrenamiento" = "#2196F3",
+                               "Prueba"        = "#FF9800")) +
+  labs(title    = "Accuracy – Entrenamiento vs Prueba",
+       subtitle = "Naive Bayes Clasificación",
+       x = NULL, y = "Accuracy (%)") +
+  ylim(0, 100) +
+  theme_minimal()
+```
+Para determinar si el modelo está sobreajustado, se evaluó Naive Bayes sobre el 
+conjunto de entrenamiento y se compararon sus métricas con las del conjunto de prueba. 
+Los resultados muestran un Accuracy de 41.62% en entrenamiento y 42.26% en 
+prueba, con Kappa de 0.1127 y 0.1184 respectivamente.
+
+La diferencia entre ambos conjuntos es de apenas 0.64 puntos porcentuales, lo que 
+descarta completamente la posibilidad de sobreajuste. En un modelo sobreajustado se 
+esperaría ver un Accuracy muy alto en entrenamiento (por ejemplo 90%+) y uno 
+considerablemente menor en prueba, porque el modelo habría memorizado los datos de 
+entrenamiento sin generalizar. Aquí ocurre exactamente lo contrario porque ambos valores 
+son prácticamente idénticos y ambos son bajos.
+
+Lo que el modelo presenta es algo como un subajuste (underfitting) por lo que no logra aprender los patrones del precio ni en los datos que ya conoce ni en datos nuevos. Esto se debe 
+a las limitaciones estructurales de Naive Bayes, ya qye su suposición de independencia entre 
+variables es demasiado simplista para un problema donde las características de las 
+propiedades están fuertemente correlacionadas entre sí (como `bathrooms`, `bedrooms` 
+y `accommodates`). En conclusión, el modelo no está sobreajustado, sino que carece 
+de la capacidad suficiente para capturar la complejidad de los datos, lo que explica 
+su bajo rendimiento tanto en entrenamiento como en prueba.
