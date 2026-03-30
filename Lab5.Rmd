@@ -912,4 +912,112 @@ ggplot(comparacion_reg_tuneo, aes(x = Modelo, y = RMSE, fill = Modelo)) +
 
 El tuneo no produjo ninguna mejora. Ambos modelos obtuvieron exactamente el mismo RMSE de $194.25. Esto confirma que en el contexto de regresión, donde el precio continuo se aproxima mediante puntos medios de bins discretos, los hiperparámetros de Naive Bayes no son el factor limitante. 
 
+### ACTIVIDAD 10 – Comparación NB vs Árbol de Clasificación vs Random Forest
 
+```{r}
+train_clas_temp <- train_nb_clas
+train_clas_temp$precio_cat <- train_resp
+```
+
+
+
+```{r actividad10-comparacion, warning=FALSE, message=FALSE}
+train_clas_temp <- train_nb_clas
+train_clas_temp$precio_cat <- train_resp
+
+# Medir tiempo de cada modelo
+tiempo_nb <- system.time({
+  nb_temp <- naiveBayes(x = train_nb_clas, y = train_resp)
+  predict(nb_temp, newdata = test_nb_clas)
+})
+
+tiempo_arbol <- system.time({
+  arbol_temp <- rpart(precio_cat ~ ., data = train_clas_temp, method = "class")
+  predict(arbol_temp, newdata = test_nb_clas, type = "class")
+})
+
+tiempo_rf <- system.time({
+  rf_temp <- randomForest(precio_cat ~ ., data = train_clas_temp, ntree = 100)
+  predict(rf_temp, newdata = test_nb_clas)
+})
+
+# Tabla comparativa final
+comparacion_final <- data.frame(
+  Modelo     = c("Naive Bayes (tuneado)",
+                 "Árbol de Clasificación",
+                 "Random Forest"),
+  Accuracy   = c(60.96, 69.24, 84.46),
+  Kappa      = c(0.4160, 0.5380, NA),
+  Tiempo_seg = round(c(tiempo_nb["elapsed"],
+                       tiempo_arbol["elapsed"],
+                       tiempo_rf["elapsed"]), 2)
+)
+
+print(comparacion_final)
+
+# Gráfico de Accuracy
+ggplot(comparacion_final,
+       aes(x = reorder(Modelo, Accuracy), y = Accuracy, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            hjust = -0.1, fontface = "bold") +
+  coord_flip() +
+  scale_fill_manual(values = c(
+    "Naive Bayes (tuneado)"  = "#FF9800",
+    "Árbol de Clasificación" = "#2196F3",
+    "Random Forest"          = "#9C27B0")) +
+  labs(title    = "Comparación Accuracy – NB vs Árbol vs Random Forest",
+       subtitle = "Mayor Accuracy = mejor clasificador",
+       x = NULL, y = "Accuracy (%)") +
+  ylim(0, 100) +
+  theme_minimal()
+
+# Gráfico de Tiempo de procesamiento
+ggplot(comparacion_final,
+       aes(x = reorder(Modelo, Tiempo_seg), y = Tiempo_seg, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Tiempo_seg, "s")),
+            hjust = -0.1, fontface = "bold") +
+  coord_flip() +
+  scale_fill_manual(values = c(
+    "Naive Bayes (tuneado)"  = "#FF9800",
+    "Árbol de Clasificación" = "#2196F3",
+    "Random Forest"          = "#9C27B0")) +
+  labs(title    = "Tiempo de procesamiento – NB vs Árbol vs Random Forest",
+       subtitle = "Menor tiempo = más eficiente computacionalmente",
+       x = NULL, y = "Tiempo (segundos)") +
+  theme_minimal()
+```
+
+
+Para concluir el análisis comparativo, se evaluaron los tres algoritmos de 
+clasificación bajo las mismas condiciones: Naive Bayes tuneado, Árbol de 
+Clasificación y Random Forest, midiendo tanto su precisión (Accuracy) como 
+su tiempo de procesamiento.
+
+En términos de **precisión**, el ranking es claro y contundente. **Random 
+Forest es el mejor clasificador** con un Accuracy de **84.46%**, superando 
+por 15.22 puntos porcentuales al Árbol de Clasificación (69.24%) y por 23.5 
+puntos a Naive Bayes tuneado (60.96%). Esta superioridad se explica porque 
+Random Forest construye múltiples árboles de decisión sobre distintas 
+muestras del dataset y combina sus predicciones, lo que le permite capturar 
+relaciones complejas entre variables y reducir el error por varianza que 
+afecta a un árbol individual.
+
+En términos de **tiempo de procesamiento**, el orden se invierte 
+completamente. El **Árbol de Clasificación es el más rápido** con apenas 
+**5.99 segundos**, seguido de Naive Bayes tuneado con **8.35 segundos**. 
+Random Forest es por lejos el más lento con **25.93 segundos**, lo cual era 
+esperable ya que necesita entrenar múltiples árboles en lugar de uno solo. 
+Sin embargo, esta diferencia de tiempo sigue siendo manejable para el 
+volumen de datos de SmartStay Advisors.
+
+La conclusión para el negocio es clara: si la prioridad es la **precisión**, 
+Random Forest es la elección indiscutible para clasificar propiedades en 
+Económica, Intermedia o Cara. Si la prioridad es la **velocidad de respuesta 
+en tiempo real**, el Árbol de Clasificación ofrece un rendimiento aceptable 
+(69.24%) con un tiempo de procesamiento mínimo. Naive Bayes, a pesar de ser 
+el algoritmo más simple, queda en último lugar en ambas métricas clave para 
+este problema específico, confirmando que su supuesto de independencia entre 
+variables no se adapta bien a las características altamente correlacionadas 
+del mercado inmobiliario de Airbnb.
