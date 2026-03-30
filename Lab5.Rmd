@@ -781,5 +781,135 @@ siguiente, donde se prueban distintos valores de hiperparámetros y la CV ayuda 
 En conclusión, ninguno de los dos modelos supera al otro porque ambos tienen el mismo rendimiento, lo que refuerza la conclusión de que la limitación no está en la técnica 
 de evaluación sino en la capacidad de Naive Bayes para separar las tres categorías de precio en este conjunto de datos.
 
+## 9. Tuneo de hiperparámetros
+
+# Tuneo de Clasificación
+
+```{r}
+tune_grid <- expand.grid(
+  laplace   = c(0, 0.5, 1, 2, 5),
+  usekernel = c(FALSE, TRUE),
+  adjust    = c(0.5, 1, 2)
+)
+
+ctrl_tune <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+
+train_tune <- train_nb_clas
+train_tune$precio_cat <- train_resp
+
+set.seed(42)
+nb_tuned <- train(
+  precio_cat ~ .,
+  data      = train_tune,
+  method    = "naive_bayes",
+  trControl = ctrl_tune,
+  tuneGrid  = tune_grid
+)
+
+print(nb_tuned)
+cat("\nMejores hiperparámetros encontrados:\n")
+print(nb_tuned$bestTune)
+
+# Predicción con modelo tuneado
+pred_tuned <- predict(nb_tuned, newdata = test_nb_clas)
+cm_tuned   <- confusionMatrix(pred_tuned, test_resp)
+print(cm_tuned)
+
+
+comparacion_tuneo <- data.frame(
+  Modelo   = c("NB Sin CV", "NB Con CV (10-fold)", "NB Tuneado"),
+  Accuracy = round(c(cm_nb$overall["Accuracy"] * 100,
+                     cm_cv$overall["Accuracy"] * 100,
+                     cm_tuned$overall["Accuracy"] * 100), 2),
+  Kappa    = round(c(cm_nb$overall["Kappa"],
+                     cm_cv$overall["Kappa"],
+                     cm_tuned$overall["Kappa"]), 4)
+)
+
+print(comparacion_tuneo)
+
+ggplot(comparacion_tuneo, aes(x = Modelo, y = Accuracy, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            vjust = -0.5, fontface = "bold", size = 5) +
+  scale_fill_manual(values = c(
+    "NB Sin CV"           = "#FF9800",
+    "NB Con CV (10-fold)" = "#2196F3",
+    "NB Tuneado"          = "#4CAF50")) +
+  labs(title    = "Comparación Accuracy – Tuneo de Hiperparámetros",
+       subtitle = "Naive Bayes Clasificación",
+       x = NULL, y = "Accuracy (%)") +
+  ylim(0, 100) +
+  theme_minimal()
+```
+
+El tuneo de hiperparámetros sí produjo una mejora significativa. El modelo tuneado alcanzó un Accuracy de 60.96%, superando en casi 19 puntos porcentuales a los modelos sin tuneo.  Esta mejora indica cómo el grid search encontró una combinación de laplace, usekernel y adjust que permite al modelo estimar distribuciones de probabilidad más adecuadas para este dataset. 
+
+# Modelado de Tuneo
+```{r}
+train_reg_tune <- train_nb_comp
+train_reg_tune$price_bin <- cut(
+  train_reg_tune$price,
+  breaks         = price_breaks_comp,
+  include.lowest = TRUE,
+  labels         = FALSE
+)
+train_reg_tune$price_bin <- as.factor(train_reg_tune$price_bin)
+
+tune_grid_reg <- expand.grid(
+  laplace   = c(0, 0.5, 1, 2, 5),
+  usekernel = c(FALSE, TRUE),
+  adjust    = c(0.5, 1, 2)
+)
+
+ctrl_tune_reg <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(42)
+nb_tuned_reg <- train(
+  x         = train_reg_tune[, features_comp],
+  y         = train_reg_tune$price_bin,
+  method    = "naive_bayes",
+  trControl = ctrl_tune_reg,
+  tuneGrid  = tune_grid_reg
+)
+
+print(nb_tuned_reg)
+cat("\nMejores hiperparámetros (regresión):\n")
+print(nb_tuned_reg$bestTune)
+
+# Predicción y métricas
+pred_bin_tuned     <- predict(nb_tuned_reg, newdata = test_nb_comp[, features_comp])
+pred_bin_num_tuned <- as.numeric(as.character(pred_bin_tuned))
+pred_bin_num_tuned <- pmin(pmax(pred_bin_num_tuned, 1), length(bin_midpoints_comp))
+pred_precios_tuned <- bin_midpoints_comp[pred_bin_num_tuned]
+
+rmse_tuned <- sqrt(mean((real_precios - pred_precios_tuned)^2, na.rm = TRUE))
+mae_tuned  <- mean(abs(real_precios - pred_precios_tuned), na.rm = TRUE)
+r2_tuned   <- cor(real_precios, pred_precios_tuned, use = "complete.obs")^2
+
+# Comparación regresión: original vs tuneado
+comparacion_reg_tuneo <- data.frame(
+  Modelo = c("NB Original", "NB Tuneado"),
+  RMSE   = round(c(rmse_nb_comp, rmse_tuned), 2),
+  MAE    = round(c(mae_nb_comp,  mae_tuned),  2),
+  R2     = round(c(r2_nb_comp,   r2_tuned),   4)
+)
+
+print(comparacion_reg_tuneo)
+
+ggplot(comparacion_reg_tuneo, aes(x = Modelo, y = RMSE, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.5) +
+  geom_text(aes(label = paste0("$", RMSE)),
+            vjust = -0.5, fontface = "bold", size = 5) +
+  scale_fill_manual(values = c("NB Original" = "#FF9800",
+                               "NB Tuneado"  = "#4CAF50")) +
+  labs(title    = "RMSE – NB Original vs NB Tuneado",
+       subtitle = "Naive Bayes Regresión",
+       x = NULL, y = "RMSE (USD)") +
+  theme_minimal()
+```
+
+El tuneo no produjo ninguna mejora. Ambos modelos obtuvieron exactamente el mismo RMSE de $194.25. Esto confirma que en el contexto de regresión, donde el precio continuo se aproxima mediante puntos medios de bins discretos, los hiperparámetros de Naive Bayes no son el factor limitante. 
 
 
